@@ -1,6 +1,6 @@
 /* require("dotenv").config(); */
 const path = require("path");
-require("dotenv").config({ path: path.resolve(__dirname, "../.env") });
+require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
@@ -17,7 +17,7 @@ app.use(cors({
   credentials: true,
 }));
 
-// ✅ Correct preflight handling
+// Preflight support
 app.options("*", cors());
 
 app.use(express.json());
@@ -89,7 +89,7 @@ app.use((err, _req, res, _next) => {
   });
 });
 
-/* ── Boot ───────────────────────────────────────────────── */
+/* ── Server Boot ────────────────────────────────────────── */
 const PORT = process.env.PORT || 5001;
 
 (async () => {
@@ -99,13 +99,13 @@ const PORT = process.env.PORT || 5001;
     console.log("✅ MySQL connected");
 
     app.listen(PORT, () => {
-      console.log(`\n🚀 InstituteMS backend → http://localhost:${PORT}`);
+      console.log(`\n🚀 Backend running → http://localhost:${PORT}`);
       console.log(`ENV : ${process.env.NODE_ENV || "development"}`);
       console.log(`DB  : ${process.env.DB_NAME}@${process.env.DB_HOST}\n`);
     });
   } catch (err) {
-    console.error("❌ Cannot connect to MySQL:", err.message);
-    console.error("Make sure MySQL is running and .env credentials are correct.");
+    console.error("❌ DB Connection Failed:", err.message);
+    console.error("Check MySQL and .env configuration");
 
     process.exit(1);
   }
