@@ -3,6 +3,16 @@ const jwt = require("jsonwebtoken");
 const db = require("../config/db");
 const nodemailer = require("nodemailer");
 
+// Create Nodemailer Transporter once at the module level
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
+
+
 
 /* ── POST /api/auth/signup ──────────────────────────────── */
 exports.signup = async (req, res) => {
@@ -75,26 +85,41 @@ exports.sendOtp = async (req, res) => {
       return res.status(404).json({ success: false, message: "User with this email does not exist" });
     }
 
+    const admin = rows[0];
+
+    // Rate Limiting Check (using last_otp_sent column)
+    if (admin.last_otp_sent) {
+      const lastSent = new Date(admin.last_otp_sent);
+      const now = new Date();
+      const diffMs = now - lastSent;
+      if (diffMs < 60000) {
+        const waitSec = Math.ceil((60000 - diffMs) / 1000);
+        return res.status(429).json({
+          success: false,
+          message: `Please wait ${waitSec} seconds before requesting a new OTP.`
+        });
+      }
+    }
+
     // Generate 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes validity
+    const now = new Date();
 
-    // Sign the OTP and email into a short-lived token (5 mins)
+    // Store OTP, expiration, and last sent timestamp in database
+    await db.query(
+      "UPDATE admins SET reset_otp = ?, reset_otp_expires = ?, last_otp_sent = ? WHERE email = ?",
+      [otp, expiresAt, now, email]
+    );
+
+    // Sign the email into a short-lived token (5 mins) - NO OTP IN PAYLOAD!
     const otpToken = jwt.sign(
-      { email, otp },
+      { email },
       process.env.JWT_SECRET,
       { expiresIn: "5m" }
     );
 
-    // Configure Nodemailer
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-    });
-
-    // Send the email with the OTP code
+    // Send the email with the OTP code using module-level transporter
     await transporter.sendMail({
       from: `"Merit Home Support" <${process.env.EMAIL_USER}>`,
       to: email,
@@ -130,10 +155,35 @@ exports.verifyOtp = async (req, res) => {
       // Decode and verify the otpToken
       const decoded = jwt.verify(otpToken, process.env.JWT_SECRET);
       
-      // Check if email and OTP match
-      if (decoded.email !== email || decoded.otp !== otp) {
+      // Check if email matches
+      if (decoded.email !== email) {
+        return res.status(400).json({ success: false, message: "Invalid OTP token" });
+      }
+
+      // Query database for admin reset details
+      const [rows] = await db.query(
+        "SELECT reset_otp, reset_otp_expires FROM admins WHERE email = ?",
+        [email]
+      );
+      if (!rows.length) {
+        return res.status(404).json({ success: false, message: "User not found" });
+      }
+
+      const admin = rows[0];
+      if (!admin.reset_otp || admin.reset_otp !== otp) {
         return res.status(400).json({ success: false, message: "Invalid OTP" });
       }
+
+      const expiresAt = new Date(admin.reset_otp_expires);
+      if (expiresAt < new Date()) {
+        return res.status(400).json({ success: false, message: "OTP has expired. Please request a new one." });
+      }
+
+      // Clear the OTP fields so it can't be reused
+      await db.query(
+        "UPDATE admins SET reset_otp = NULL, reset_otp_expires = NULL WHERE email = ?",
+        [email]
+      );
 
       // Generate a temporary resetToken to allow password reset (valid for 10 mins)
       const resetToken = jwt.sign(
@@ -144,7 +194,7 @@ exports.verifyOtp = async (req, res) => {
 
       return res.json({ success: true, message: "OTP verified successfully", resetToken });
     } catch (err) {
-      return res.status(400).json({ success: false, message: "OTP has expired. Please request a new one." });
+      return res.status(400).json({ success: false, message: "OTP has expired or is invalid. Please request a new one." });
     }
   } catch (err) {
     console.error("verifyOtp error:", err);

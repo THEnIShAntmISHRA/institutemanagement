@@ -40,22 +40,7 @@ app.use("/api/teacher-updates/public", require("./routes/teacherUpdatePublic"));
 app.use("/api/admissions/public", require("./routes/admissionPublic"));
 app.use("/api/inquiries/public", require("./routes/inquiryPublic"));
 
-app.use("/api/students-universal", require("./routes/studentsUniversal"));
-
-app.use("/api/inquiry-extra", require("./routes/inquiryExtra"));
-app.use("/api/teacher-updates", require("./routes/teacherUpdates"));
-
-app.use("/api/teacher-student-assessments", require("./routes/teacherStudentAssessments"));
-
-app.use("/api/subjects", require("./routes/subjects"));
-app.use("/api/batches", require("./routes/batchRoute"));
-app.use("/api/chapters", require("./routes/chapters"));
-app.use("/api/standards", require("./routes/standard"));
-app.use("/api/notes", require("./routes/notes"));
-app.use("/api/boards", require("./routes/boards"));
-app.use("/api/branches", require("./routes/branchRoute"));
-app.use("/api/assign-teacher", require("./routes/teacherAssignRoute"));
-app.use("/api/admin", require("./routes/scheduleRoute"));
+// Routes that are not present in the repository have been removed to prevent startup crashes.
 
 /* ── Health check ───────────────────────────────────────── */
 app.get("/api/health", (_req, res) => {
@@ -97,6 +82,23 @@ const PORT = process.env.PORT || 5001;
     await db.testConnection();
 
     console.log("✅ MySQL connected");
+
+    // Automatically check/run ALTER TABLE to add OTP columns so the client doesn't have to run migrations manually
+    try {
+      await db.query(`
+        ALTER TABLE admins 
+        ADD COLUMN reset_otp VARCHAR(6) DEFAULT NULL,
+        ADD COLUMN reset_otp_expires DATETIME DEFAULT NULL,
+        ADD COLUMN last_otp_sent DATETIME DEFAULT NULL
+      `);
+      console.log("✅ Ensured OTP & rate limiting columns exist in admins table");
+    } catch (err) {
+      if (err.code !== "ER_DUP_FIELDNAME" && !err.message.includes("Duplicate column name")) {
+        console.warn("⚠️ Could not run ALTER TABLE:", err.message);
+      } else {
+        console.log("✅ OTP & rate limiting columns already exist in admins table");
+      }
+    }
 
     app.listen(PORT, () => {
       console.log(`\n🚀 Backend running → http://localhost:${PORT}`);
