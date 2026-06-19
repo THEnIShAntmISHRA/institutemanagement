@@ -98,21 +98,8 @@ const PORT = process.env.PORT || 5001;
     console.log("✅ MySQL connected");
 
     // Automatically check/run ALTER TABLE to add OTP columns so the client doesn't have to run migrations manually
-    try {
-      await db.query(`
-        ALTER TABLE admins 
-        ADD COLUMN reset_otp VARCHAR(6) DEFAULT NULL,
-        ADD COLUMN reset_otp_expires DATETIME DEFAULT NULL,
-        ADD COLUMN last_otp_sent DATETIME DEFAULT NULL
-      `);
-      console.log("✅ Ensured OTP & rate limiting columns exist in admins table");
-    } catch (err) {
-      if (err.code !== "ER_DUP_FIELDNAME" && !err.message.includes("Duplicate column name")) {
-        console.warn("⚠️ Could not run ALTER TABLE:", err.message);
-      } else {
-        console.log("✅ OTP & rate limiting columns already exist in admins table");
-      }
-    }
+    const { ensureOtpColumns } = require("./db/migrate");
+    await ensureOtpColumns(db);
 
     app.listen(PORT, () => {
       console.log(`\n🚀 Backend running → http://localhost:${PORT}`);

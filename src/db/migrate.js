@@ -151,6 +151,24 @@ CREATE TABLE IF NOT EXISTS finance_records (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 `;
 
+async function ensureOtpColumns(conn) {
+  try {
+    await conn.query(`
+      ALTER TABLE admins 
+      ADD COLUMN reset_otp VARCHAR(6) DEFAULT NULL,
+      ADD COLUMN reset_otp_expires DATETIME DEFAULT NULL,
+      ADD COLUMN last_otp_sent DATETIME DEFAULT NULL
+    `);
+    console.log("✅ Ensured OTP & rate limiting columns exist in admins table");
+  } catch (err) {
+    if (err.code === "ER_DUP_FIELDNAME" || err.message.includes("Duplicate column name")) {
+      console.log("✅ OTP & rate limiting columns already exist in admins table");
+    } else {
+      console.warn("⚠️ Could not run ALTER TABLE:", err.message);
+    }
+  }
+}
+
 async function migrate() {
   // Connect WITHOUT specifying a database so we can CREATE it
   const conn = await mysql.createConnection({
@@ -171,27 +189,19 @@ async function migrate() {
   console.log("✅ All tables created (or already existed)");
 
   // Run ALTER TABLE to add missing columns in existing databases
-  try {
-    await conn.query(`
-      ALTER TABLE admins 
-      ADD COLUMN reset_otp VARCHAR(6) DEFAULT NULL,
-      ADD COLUMN reset_otp_expires DATETIME DEFAULT NULL,
-      ADD COLUMN last_otp_sent DATETIME DEFAULT NULL
-    `);
-    console.log("✅ Ensured OTP & rate limiting columns exist in admins table");
-  } catch (err) {
-    if (err.code === "ER_DUP_FIELDNAME" || err.message.includes("Duplicate column name")) {
-      console.log("✅ OTP & rate limiting columns already exist in admins table");
-    } else {
-      console.warn("⚠️ Could not run ALTER TABLE:", err.message);
-    }
-  }
+  await ensureOtpColumns(conn);
 
   await conn.end();
   console.log("\n🎉 Migration complete!\n");
 }
 
-migrate().catch((err) => {
-  console.error("❌ Migration failed:", err.message);
-  process.exit(1);
-});
+if (require.main === module) {
+  migrate().catch((err) => {
+    console.error("❌ Migration failed:", err.message);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  ensureOtpColumns,
+};
