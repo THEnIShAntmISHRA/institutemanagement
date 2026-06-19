@@ -39,7 +39,6 @@ app.use("/api/dashboard", require("./routes/dashboard"));
 app.use("/api/teacher-updates/public", require("./routes/teacherUpdatePublic"));
 app.use("/api/admissions/public", require("./routes/admissionPublic"));
 app.use("/api/inquiries/public", require("./routes/inquiryPublic"));
-
 app.use("/api/students-universal", require("./routes/studentsUniversal"));
 
 app.use("/api/inquiry-extra", require("./routes/inquiryExtra"));
@@ -97,6 +96,10 @@ const PORT = process.env.PORT || 5001;
     await db.testConnection();
 
     console.log("✅ MySQL connected");
+
+    // Automatically check/run ALTER TABLE to add OTP columns so the client doesn't have to run migrations manually
+    const { ensureOtpColumns } = require("./db/migrate");
+    await ensureOtpColumns(db);
 
     app.listen(PORT, () => {
       console.log(`\n🚀 Backend running → http://localhost:${PORT}`);
