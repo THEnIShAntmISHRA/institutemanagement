@@ -39,18 +39,22 @@ app.use("/api/dashboard", require("./routes/dashboard"));
 app.use("/api/teacher-updates/public", require("./routes/teacherUpdatePublic"));
 app.use("/api/admissions/public", require("./routes/admissionPublic"));
 app.use("/api/inquiries/public", require("./routes/inquiryPublic"));
+app.use("/api/students-universal", require("./routes/studentsUniversal"));
 
-// The following routes are not present in this backend repository version and are commented out to prevent startup crashes.
-// app.use("/api/students-universal", require("./routes/studentsUniversal"));
-// app.use("/api/inquiry-extra", require("./routes/inquiryExtra"));
-// app.use("/api/teacher-updates", require("./routes/teacherUpdates"));
-// app.use("/api/teacher-student-assessments", require("./routes/teacherStudentAssessments"));
-// app.use("/api/assign-teacher", require("./routes/teacherAssignRoute"));
-// app.use("/api/admin", require("./routes/scheduleRoute"));
+app.use("/api/inquiry-extra", require("./routes/inquiryExtra"));
+app.use("/api/teacher-updates", require("./routes/teacherUpdates"));
 
-// Use mock router for Teacher Notes wizard endpoints
-const mockNotes = require("./routes/mockNotes");
-app.use("/api", mockNotes);
+app.use("/api/teacher-student-assessments", require("./routes/teacherStudentAssessments"));
+
+app.use("/api/subjects", require("./routes/subjects"));
+app.use("/api/batches", require("./routes/batchRoute"));
+app.use("/api/chapters", require("./routes/chapters"));
+app.use("/api/standards", require("./routes/standard"));
+app.use("/api/notes", require("./routes/notes"));
+app.use("/api/boards", require("./routes/boards"));
+app.use("/api/branches", require("./routes/branchRoute"));
+app.use("/api/assign-teacher", require("./routes/teacherAssignRoute"));
+app.use("/api/admin", require("./routes/scheduleRoute"));
 
 /* ── Health check ───────────────────────────────────────── */
 app.get("/api/health", (_req, res) => {

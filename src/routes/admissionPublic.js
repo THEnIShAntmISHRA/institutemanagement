@@ -12,7 +12,7 @@ const db      = require("../config/db")
 
 router.post("/", async (req, res) => {
   try {
-    const { name, phone, email, father_name, father_phone, board, standard, course, location } = req.body
+    const { name, phone, email, father_name, father_phone, board, standard, course, location, subjects} = req.body
 
     if (!name || !phone) {
       return res.status(400).json({ success: false, message: "Name and phone are required" })
@@ -23,6 +23,10 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid email format" })
     }
 
+  // Convert subjects array to comma-separated string, e.g. "Math,Science,SST"
+    const subjectsStr = Array.isArray(subjects) ? subjects.join(",") : (subjects || "")
+
+
     // Attach to the first admin (single-institute setup)
     const [admins] = await db.query("SELECT id FROM admins LIMIT 1")
     if (!admins.length) {
@@ -32,8 +36,8 @@ router.post("/", async (req, res) => {
 
     const [result] = await db.query(
       `INSERT INTO students
-         (admin_id, name, phone, email, father_name, father_phone, board, standard, course, location, fee, paid_fee)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)`,
+         (admin_id, name, phone, email, father_name, father_phone, board, standard, course, location, subjects, fee, paid_fee)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)`,
       [
         adminId,
         name,
@@ -45,6 +49,7 @@ router.post("/", async (req, res) => {
         standard     || "",
         course       || "",   // only filled for 11th & 12th
         location     || "",
+	subjectsStr,           
       ]
     )
 
