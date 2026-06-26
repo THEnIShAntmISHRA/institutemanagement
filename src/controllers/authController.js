@@ -12,24 +12,39 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-
-
 /* ── POST /api/auth/signup ──────────────────────────────── */
 exports.signup = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
-    if (!name || !email || !password)
+    const { name, email, password, role } = req.body;
+    if (!name || !email || !password || !role)
       return res.status(400).json({ success: false, message: "All fields are required" });
 
-    const [rows] = await db.query("SELECT id FROM admins WHERE email = ?", [email]);
+    const tableName = role === "admin" ? "admins" : "teachers";
+    const [rows] = await db.query(`SELECT id FROM ${tableName} WHERE email = ?`, [email]);
     if (rows.length)
       return res.status(409).json({ success: false, message: "Email already registered" });
 
     const hash = await bcrypt.hash(password, 10);
-    const [result] = await db.query(
-      "INSERT INTO admins (name, email, password) VALUES (?, ?, ?)",
-      [name, email, hash]
-    );
+    let result;
+
+    if (role === "admin") {
+      [result] = await db.query(
+        `INSERT INTO admins (name, email, password, role) VALUES (?, ?, ?, ?)`,
+        [name, email, hash, role]
+      );
+    } else {
+      // Find the first admin to associate the teacher with
+      let adminId = 1;
+      const [adminRows] = await db.query("SELECT id FROM admins LIMIT 1");
+      if (adminRows.length > 0) {
+        adminId = adminRows[0].id;
+      }
+      
+      [result] = await db.query(
+        `INSERT INTO teachers (name, email, password, role, admin_id) VALUES (?, ?, ?, ?, ?)`,
+        [name, email, hash, role, adminId]
+      );
+    }
 
     return res.status(201).json({
       success: true,
@@ -46,30 +61,77 @@ exports.signup = async (req, res) => {
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    if (!email || !password)
-      return res.status(400).json({ success: false, message: "Email and password are required" });
 
-    const [rows] = await db.query("SELECT * FROM admins WHERE email = ?", [email]);
-    if (!rows.length)
-      return res.status(401).json({ success: false, message: "Invalid credentials" });
+    if (!email || !password) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Email and password are required" 
+      });
+    }
 
-    const admin = rows[0];
-    const match = await bcrypt.compare(password, admin.password);
-    if (!match)
-      return res.status(401).json({ success: false, message: "Invalid credentials" });
+    let user = null;
+    let role = null;
 
+    // 1. Check Admins Table
+    const [adminRows] = await db.query("SELECT * FROM admins WHERE email = ?", [email]);
+    
+    if (adminRows.length > 0) {
+      user = adminRows[0];
+      role = "admin";
+    } else {
+      // 2. If not found in admins, check Teachers Table
+      const [teacherRows] = await db.query("SELECT * FROM teachers WHERE email = ?", [email]);
+      if (teacherRows.length > 0) {
+        user = teacherRows[0];
+        role = "teacher";
+      }
+    }
+
+    // 3. If user doesn't exist in either table
+    if (!user) {
+      return res.status(401).json({ 
+        success: false, 
+        message: "Invalid credentials" 
+      });
+    }
+
+    // 4. Verify Password
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) {
+      return res.status(401).json({ 
+        success: false, 
+        message: "Invalid credentials" 
+      });
+    }
+
+    // 5. Generate Token (Include role in payload)
     const token = jwt.sign(
-      { id: admin.id, email: admin.email, name: admin.name },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
+      { 
+        id: user.id, 
+        email: user.email, 
+        name: user.name, 
+        role: role 
+      },
+      process.env.JWT_SECRET || "change_this_to_a_long_random_string",
+      { expiresIn: "7d" }
     );
 
-    const { password: _pw, ...adminData } = admin;
-    adminData.role = "admin";
-    return res.json({ success: true, message: "Login successful", token, admin: adminData });
+    // 6. Return user data (excluding password)
+    const { password: _pw, ...userData } = user;
+    
+    return res.json({ 
+      success: true, 
+      message: `Login successful as ${role}`, 
+      token, 
+      user: { ...userData, role } 
+    });
+
   } catch (err) {
-    console.error("login error:", err);
-    return res.status(500).json({ success: false, message: "Server error" });
+    console.error("Login error:", err);
+    return res.status(500).json({ 
+      success: false, 
+      message: "Server error" 
+    });
   }
 };
 
@@ -79,17 +141,30 @@ exports.sendOtp = async (req, res) => {
     const { email } = req.body;
     if (!email) return res.status(400).json({ success: false, message: "Email is required" });
 
-    // Check if admin exists
-    const [rows] = await db.query("SELECT * FROM admins WHERE email = ?", [email]);
-    if (!rows.length) {
+    let user = null;
+    let tableName = null;
+
+    // Check if user exists in admins table first
+    const [adminRows] = await db.query("SELECT * FROM admins WHERE email = ?", [email]);
+    if (adminRows.length > 0) {
+      user = adminRows[0];
+      tableName = "admins";
+    } else {
+      // If not, check teachers table
+      const [teacherRows] = await db.query("SELECT * FROM teachers WHERE email = ?", [email]);
+      if (teacherRows.length > 0) {
+        user = teacherRows[0];
+        tableName = "teachers";
+      }
+    }
+
+    if (!user) {
       return res.status(404).json({ success: false, message: "User with this email does not exist" });
     }
 
-    const admin = rows[0];
-
     // Rate Limiting Check (using last_otp_sent column)
-    if (admin.last_otp_sent) {
-      const lastSent = new Date(admin.last_otp_sent);
+    if (user.last_otp_sent) {
+      const lastSent = new Date(user.last_otp_sent);
       const now = new Date();
       const diffMs = now - lastSent;
       if (diffMs < 60000) {
@@ -108,14 +183,14 @@ exports.sendOtp = async (req, res) => {
 
     // Store OTP, expiration, and last sent timestamp in database
     await db.query(
-      "UPDATE admins SET reset_otp = ?, reset_otp_expires = ?, last_otp_sent = ? WHERE email = ?",
+      `UPDATE ${tableName} SET reset_otp = ?, reset_otp_expires = ?, last_otp_sent = ? WHERE email = ?`,
       [otp, expiresAt, now, email]
     );
 
     // Sign the email into a short-lived token (5 mins) - NO OTP IN PAYLOAD!
     const otpToken = jwt.sign(
       { email },
-      process.env.JWT_SECRET,
+      process.env.JWT_SECRET || "change_this_to_a_long_random_string",
       { expiresIn: "5m" }
     );
 
@@ -153,42 +228,59 @@ exports.verifyOtp = async (req, res) => {
 
     try {
       // Decode and verify the otpToken
-      const decoded = jwt.verify(otpToken, process.env.JWT_SECRET);
+      const decoded = jwt.verify(otpToken, process.env.JWT_SECRET || "change_this_to_a_long_random_string");
       
       // Check if email matches
       if (decoded.email !== email) {
         return res.status(400).json({ success: false, message: "Invalid OTP token" });
       }
 
-      // Query database for admin reset details
-      const [rows] = await db.query(
+      let user = null;
+      let tableName = null;
+
+      // Query database for user reset details (check admins first)
+      const [adminRows] = await db.query(
         "SELECT reset_otp, reset_otp_expires FROM admins WHERE email = ?",
         [email]
       );
-      if (!rows.length) {
+      if (adminRows.length > 0) {
+        user = adminRows[0];
+        tableName = "admins";
+      } else {
+        // If not found in admins, check teachers
+        const [teacherRows] = await db.query(
+          "SELECT reset_otp, reset_otp_expires FROM teachers WHERE email = ?",
+          [email]
+        );
+        if (teacherRows.length > 0) {
+          user = teacherRows[0];
+          tableName = "teachers";
+        }
+      }
+
+      if (!user) {
         return res.status(404).json({ success: false, message: "User not found" });
       }
 
-      const admin = rows[0];
-      if (!admin.reset_otp || admin.reset_otp !== otp) {
+      if (!user.reset_otp || user.reset_otp !== otp) {
         return res.status(400).json({ success: false, message: "Invalid OTP" });
       }
 
-      const expiresAt = new Date(admin.reset_otp_expires);
+      const expiresAt = new Date(user.reset_otp_expires);
       if (expiresAt < new Date()) {
         return res.status(400).json({ success: false, message: "OTP has expired. Please request a new one." });
       }
 
       // Clear the OTP fields so it can't be reused
       await db.query(
-        "UPDATE admins SET reset_otp = NULL, reset_otp_expires = NULL WHERE email = ?",
+        `UPDATE ${tableName} SET reset_otp = NULL, reset_otp_expires = NULL WHERE email = ?`,
         [email]
       );
 
       // Generate a temporary resetToken to allow password reset (valid for 10 mins)
       const resetToken = jwt.sign(
         { email, verified: true },
-        process.env.JWT_SECRET,
+        process.env.JWT_SECRET || "change_this_to_a_long_random_string",
         { expiresIn: "10m" }
       );
 
@@ -212,14 +304,32 @@ exports.resetPasswordOtp = async (req, res) => {
 
     try {
       // Verify resetToken
-      const decoded = jwt.verify(resetToken, process.env.JWT_SECRET);
+      const decoded = jwt.verify(resetToken, process.env.JWT_SECRET || "change_this_to_a_long_random_string");
       if (decoded.email !== email || !decoded.verified) {
         return res.status(400).json({ success: false, message: "Invalid reset session" });
       }
 
+      let tableName = null;
+
+      // Determine which table the email belongs to (check admins first)
+      const [adminRows] = await db.query("SELECT id FROM admins WHERE email = ?", [email]);
+      if (adminRows.length > 0) {
+        tableName = "admins";
+      } else {
+        // If not found in admins, check teachers
+        const [teacherRows] = await db.query("SELECT id FROM teachers WHERE email = ?", [email]);
+        if (teacherRows.length > 0) {
+          tableName = "teachers";
+        }
+      }
+
+      if (!tableName) {
+        return res.status(404).json({ success: false, message: "User not found" });
+      }
+
       // Hash the new password and update in database
       const hash = await bcrypt.hash(newPassword, 10);
-      await db.query("UPDATE admins SET password = ? WHERE email = ?", [hash, email]);
+      await db.query(`UPDATE ${tableName} SET password = ? WHERE email = ?`, [hash, email]);
 
       return res.json({ success: true, message: "Password updated successfully" });
     } catch (err) {
@@ -230,4 +340,3 @@ exports.resetPasswordOtp = async (req, res) => {
     return res.status(500).json({ success: false, message: "Server error" });
   }
 };
-

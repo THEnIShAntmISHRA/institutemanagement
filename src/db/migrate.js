@@ -164,7 +164,23 @@ async function ensureOtpColumns(conn) {
     if (err.code === "ER_DUP_FIELDNAME" || err.message.includes("Duplicate column name")) {
       console.log("✅ OTP & rate limiting columns already exist in admins table");
     } else {
-      console.warn("⚠️ Could not run ALTER TABLE:", err.message);
+      console.warn("⚠️ Could not run ALTER TABLE on admins:", err.message);
+    }
+  }
+
+  try {
+    await conn.query(`
+      ALTER TABLE teachers 
+      ADD COLUMN reset_otp VARCHAR(6) DEFAULT NULL,
+      ADD COLUMN reset_otp_expires DATETIME DEFAULT NULL,
+      ADD COLUMN last_otp_sent DATETIME DEFAULT NULL
+    `);
+    console.log("✅ Ensured OTP & rate limiting columns exist in teachers table");
+  } catch (err) {
+    if (err.code === "ER_DUP_FIELDNAME" || err.message.includes("Duplicate column name")) {
+      console.log("✅ OTP & rate limiting columns already exist in teachers table");
+    } else {
+      console.warn("⚠️ Could not run ALTER TABLE on teachers:", err.message);
     }
   }
 }
