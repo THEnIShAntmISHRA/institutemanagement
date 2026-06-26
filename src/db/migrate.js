@@ -20,15 +20,19 @@ const DDL = `
 -- 1. admins  (login accounts for institute owners / staff)
 -- ─────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS admins (
-  id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  name        VARCHAR(100)  NOT NULL,
-  email       VARCHAR(150)  NOT NULL UNIQUE,
-  password    VARCHAR(255)  NOT NULL,
-  institute   VARCHAR(200)  NOT NULL DEFAULT '',
-  address     TEXT,
-  created_at  DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at  DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  id                INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name              VARCHAR(100)  NOT NULL,
+  email             VARCHAR(150)  NOT NULL UNIQUE,
+  password          VARCHAR(255)  NOT NULL,
+  institute         VARCHAR(200)  NOT NULL DEFAULT '',
+  address           TEXT,
+  reset_otp         VARCHAR(6)    DEFAULT NULL,
+  reset_otp_expires DATETIME      DEFAULT NULL,
+  last_otp_sent     DATETIME      DEFAULT NULL,
+  created_at        DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at        DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 
 -- ─────────────────────────────────────────────────────────
 -- 2. students
@@ -147,6 +151,40 @@ CREATE TABLE IF NOT EXISTS finance_records (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 `;
 
+async function ensureOtpColumns(conn) {
+  try {
+    await conn.query(`
+      ALTER TABLE admins 
+      ADD COLUMN reset_otp VARCHAR(6) DEFAULT NULL,
+      ADD COLUMN reset_otp_expires DATETIME DEFAULT NULL,
+      ADD COLUMN last_otp_sent DATETIME DEFAULT NULL
+    `);
+    console.log("✅ Ensured OTP & rate limiting columns exist in admins table");
+  } catch (err) {
+    if (err.code === "ER_DUP_FIELDNAME" || err.message.includes("Duplicate column name")) {
+      console.log("✅ OTP & rate limiting columns already exist in admins table");
+    } else {
+      console.warn("⚠️ Could not run ALTER TABLE on admins:", err.message);
+    }
+  }
+
+  try {
+    await conn.query(`
+      ALTER TABLE teachers 
+      ADD COLUMN reset_otp VARCHAR(6) DEFAULT NULL,
+      ADD COLUMN reset_otp_expires DATETIME DEFAULT NULL,
+      ADD COLUMN last_otp_sent DATETIME DEFAULT NULL
+    `);
+    console.log("✅ Ensured OTP & rate limiting columns exist in teachers table");
+  } catch (err) {
+    if (err.code === "ER_DUP_FIELDNAME" || err.message.includes("Duplicate column name")) {
+      console.log("✅ OTP & rate limiting columns already exist in teachers table");
+    } else {
+      console.warn("⚠️ Could not run ALTER TABLE on teachers:", err.message);
+    }
+  }
+}
+
 async function migrate() {
   // Connect WITHOUT specifying a database so we can CREATE it
   const conn = await mysql.createConnection({
@@ -166,11 +204,20 @@ async function migrate() {
   await conn.query(DDL);
   console.log("✅ All tables created (or already existed)");
 
+  // Run ALTER TABLE to add missing columns in existing databases
+  await ensureOtpColumns(conn);
+
   await conn.end();
   console.log("\n🎉 Migration complete!\n");
 }
 
-migrate().catch((err) => {
-  console.error("❌ Migration failed:", err.message);
-  process.exit(1);
-});
+if (require.main === module) {
+  migrate().catch((err) => {
+    console.error("❌ Migration failed:", err.message);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  ensureOtpColumns,
+};
