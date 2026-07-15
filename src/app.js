@@ -28,6 +28,13 @@ app.use("/api/teacher-updates/public", require("./routes/teacherUpdatePublic"));
 app.use("/api/admissions/public",  require("./routes/admissionPublic"));
 app.use("/api/inquiries/public",  require("./routes/inquiryPublic"));
 
+/* ── Phase 1 Routes ─────────────────────────────────────── */
+app.use("/api/auth/student", require("./routes/studentAuthRoutes"));
+app.use("/api/dashboard/student", require("./routes/studentDashboardRoutes"));
+app.use("/api/recycle-bin", require("./routes/recycleBinRoutes"));
+app.use("/api/homework", require("./routes/homework"));
+app.use("/api/teaching-logs", require("./routes/teachingLogs"));
+
 /* ── Health check ───────────────────────────────────────── */
 app.get("/api/health", (_req, res) =>
   res.json({ success: true, message: "InstituteMS API running", ts: new Date() })

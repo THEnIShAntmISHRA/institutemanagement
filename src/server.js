@@ -12,7 +12,7 @@ const app = express();
 /* ── Middleware ─────────────────────────────────────────── */
 app.use(cors({
   origin: process.env.FRONTEND_URL || "https://merit-home.vercel.app",
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true,
 }));
@@ -29,6 +29,7 @@ app.use("/api/auth", require("./routes/auth"));
 app.use("/api/profile", require("./routes/profile"));
 app.use("/api/students", require("./routes/students"));
 app.use("/api/teachers", require("./routes/teachers"));
+app.use("/api/attendance", require("./routes/attendance"));
 app.use("/api/inquiries", require("./routes/inquiries"));
 app.use("/api/appointments", require("./routes/appointments"));
 
@@ -55,6 +56,13 @@ app.use("/api/boards", require("./routes/boards"));
 app.use("/api/branches", require("./routes/branchRoute"));
 app.use("/api/assign-teacher", require("./routes/teacherAssignRoute"));
 app.use("/api/admin", require("./routes/scheduleRoute"));
+
+/* ── Phase 1 Routes ─────────────────────────────────────── */
+app.use("/api/auth/student", require("./routes/studentAuthRoutes"));
+app.use("/api/dashboard/student", require("./routes/studentDashboardRoutes"));
+app.use("/api/recycle-bin", require("./routes/recycleBinRoutes"));
+app.use("/api/homework", require("./routes/homework"));
+app.use("/api/teaching-logs", require("./routes/teachingLogs"));
 
 /* ── Health check ───────────────────────────────────────── */
 app.get("/api/health", (_req, res) => {

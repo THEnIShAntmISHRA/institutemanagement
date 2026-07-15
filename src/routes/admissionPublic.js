@@ -27,6 +27,17 @@ router.post("/", async (req, res) => {
     const subjectsStr = Array.isArray(subjects) ? subjects.join(",") : (subjects || "")
 
 
+    // Check for existing student
+    if (email || phone) {
+      const [existing] = await db.query(
+        "SELECT id FROM students WHERE email = ? OR phone = ?", 
+        [email || 'N/A', phone || 'N/A']
+      );
+      if (existing.length > 0) {
+        return res.status(409).json({ success: false, message: "Email or Phone already exists in the system." });
+      }
+    }
+
     // Attach to the first admin (single-institute setup)
     const [admins] = await db.query("SELECT id FROM admins LIMIT 1")
     if (!admins.length) {
@@ -34,10 +45,20 @@ router.post("/", async (req, res) => {
     }
     const adminId = admins[0].id
 
+    // Generate Initial Credentials
+    const phoneLast4 = phone ? phone.slice(-4) : Math.floor(1000 + Math.random() * 9000);
+    const plainTextPassword = `Student@${phoneLast4}`;
+    
+    const bcrypt = require('bcryptjs');
+    const { encrypt } = require('../utils/crypto');
+
+    const hashedPassword = await bcrypt.hash(plainTextPassword, 12);
+    const encryptedPassword = encrypt(plainTextPassword);
+
     const [result] = await db.query(
       `INSERT INTO students
-         (admin_id, name, phone, email, father_name, father_phone, board, standard, course, location, subjects, fee, paid_fee)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0)`,
+         (admin_id, name, phone, email, father_name, father_phone, board, standard, course, location, subjects, fee, paid_fee, password, encrypted_password, is_first_login)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, TRUE)`,
       [
         adminId,
         name,
@@ -47,9 +68,11 @@ router.post("/", async (req, res) => {
         father_phone || "",
         board        || "",
         standard     || "",
-        course       || "",   // only filled for 11th & 12th
+        course       || "",   
         location     || "",
-	subjectsStr,           
+	      subjectsStr,
+        hashedPassword,
+        encryptedPassword
       ]
     )
 
@@ -57,6 +80,10 @@ router.post("/", async (req, res) => {
       success: true,
       message: "Admission submitted successfully",
       id: result.insertId,
+      credentials: {
+        loginId: email || phone,
+        tempPassword: plainTextPassword
+      }
     })
 
   } catch (err) {

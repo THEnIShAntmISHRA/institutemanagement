@@ -74,13 +74,14 @@ async function seed() {
     { name:"Amit Kumar",    email:"amit@example.com",   phone:"9876543214", father_name:"Vikram Kumar",   father_phone:"9876543215", board:"State", standard:"11", course:"Science",  location:"Thergaon",  fee:6000, paid_fee:6000 },
     { name:"Sneha Joshi",   email:"sneha@example.com",  phone:"9876543216", father_name:"Prakash Joshi",  father_phone:"9876543217", board:"CBSE",  standard:"12", course:"Arts",     location:"Chinchwad", fee:7000, paid_fee:0    },
   ];
+  const studentHash = await bcrypt.hash("student123", 10);
   const studentIds = [];
   for (const s of students) {
     const [r] = await db.query(
       `INSERT INTO students
-         (admin_id,name,email,phone,father_name,father_phone,board,standard,course,location,institute,fee,paid_fee)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [adminId,s.name,s.email,s.phone,s.father_name,s.father_phone,s.board,s.standard,s.course,s.location,"Merit Home Pvt Ltd",s.fee,s.paid_fee]
+         (admin_id,name,email,password,phone,father_name,father_phone,board,standard,course,location,institute,fee,paid_fee)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [adminId,s.name,s.email,studentHash,s.phone,s.father_name,s.father_phone,s.board,s.standard,s.course,s.location,"Merit Home Pvt Ltd",s.fee,s.paid_fee]
     );
     studentIds.push(r.insertId);
   }
@@ -166,6 +167,10 @@ async function seed() {
   console.log("🔐 Admin credentials");
   console.log("   Email    : admin@meritome.com");
   console.log("   Password : admin123");
+  console.log("────────────────────────────────────");
+  console.log("🔐 Student credentials");
+  console.log("   Email    : rahul@example.com (or any student email)");
+  console.log("   Password : student123");
   console.log("────────────────────────────────────\n");
 
   process.exit(0);

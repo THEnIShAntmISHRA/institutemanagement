@@ -52,6 +52,8 @@ CREATE TABLE IF NOT EXISTS students (
   institute    VARCHAR(200) DEFAULT '',
   fee          DECIMAL(10,2) DEFAULT 0.00,
   paid_fee     DECIMAL(10,2) DEFAULT 0.00,
+  password     VARCHAR(255) DEFAULT NULL,
+  deleted_at   DATETIME     DEFAULT NULL,
   created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (admin_id) REFERENCES admins(id) ON DELETE CASCADE
@@ -152,6 +154,44 @@ CREATE TABLE IF NOT EXISTS finance_records (
 `;
 
 async function ensureOtpColumns(conn) {
+  // Create branches table if missing
+  try {
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS branches (
+        branch_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        branch_name VARCHAR(100) NOT NULL UNIQUE,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB;
+    `);
+    console.log("✅ branches table verified/created.");
+  } catch (err) {
+    console.warn("⚠️ Could not create branches table:", err.message);
+  }
+
+  // Create batches table if missing
+  try {
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS batches (
+        batch_id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        branch_id INT UNSIGNED NOT NULL,
+        batch_name VARCHAR(100) NOT NULL,
+        start_time TIME NOT NULL,
+        end_time TIME NOT NULL,
+        batch_start_date DATE NOT NULL,
+        batch_end_date DATE NOT NULL,
+        late_grace_minutes INT DEFAULT 10,
+        scheduled_days VARCHAR(100) DEFAULT 'Mon,Tue,Wed,Thu,Fri',
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        FOREIGN KEY (branch_id) REFERENCES branches(branch_id) ON DELETE CASCADE
+      ) ENGINE=InnoDB;
+    `);
+    console.log("✅ batches table verified/created.");
+  } catch (err) {
+    console.warn("⚠️ Could not create batches table:", err.message);
+  }
+
   try {
     await conn.query(`
       ALTER TABLE admins 
@@ -182,6 +222,140 @@ async function ensureOtpColumns(conn) {
     } else {
       console.warn("⚠️ Could not run ALTER TABLE on teachers:", err.message);
     }
+  }
+
+  // Phase 1 Additions for Students
+  try {
+    await conn.query(`
+      ALTER TABLE students 
+      ADD COLUMN password VARCHAR(255) DEFAULT NULL,
+      ADD COLUMN deleted_at DATETIME DEFAULT NULL
+    `);
+    console.log("✅ Ensured password & deleted_at columns exist in students table");
+  } catch (err) {
+    if (err.code === "ER_DUP_FIELDNAME" || err.message.includes("Duplicate column name")) {
+      console.log("✅ password & deleted_at columns already exist in students table");
+    } else {
+      console.warn("⚠️ Could not run ALTER TABLE on students:", err.message);
+    }
+  }
+
+  // Phase 2 Additions for Students
+  try {
+    await conn.query(`
+      ALTER TABLE students 
+      ADD COLUMN encrypted_password VARCHAR(255) DEFAULT NULL,
+      ADD COLUMN is_first_login BOOLEAN DEFAULT TRUE
+    `);
+    console.log("✅ Ensured encrypted_password & is_first_login columns exist in students table");
+  } catch (err) {
+    if (err.code === "ER_DUP_FIELDNAME" || err.message.includes("Duplicate column name")) {
+      console.log("✅ encrypted_password or is_first_login already exists in students table");
+    } else {
+      console.warn("⚠️ Could not run ALTER TABLE on students for new auth columns:", err.message);
+    }
+  }
+
+  // Phase 3 Attendance Additions
+  try {
+    await conn.query(`
+      ALTER TABLE students 
+      ADD COLUMN biometric_code VARCHAR(50) UNIQUE DEFAULT NULL
+    `);
+    console.log("✅ Ensured biometric_code column exists in students table");
+  } catch (err) {
+    if (err.code === "ER_DUP_FIELDNAME" || err.message.includes("Duplicate column name")) {
+      console.log("✅ biometric_code already exists in students table");
+    } else {
+      console.warn("⚠️ Could not run ALTER TABLE on students for biometric_code:", err.message);
+    }
+  }
+
+  try {
+    await conn.query(`
+      ALTER TABLE teachers 
+      ADD COLUMN biometric_code VARCHAR(50) UNIQUE DEFAULT NULL
+    `);
+    console.log("✅ Ensured biometric_code column exists in teachers table");
+  } catch (err) {
+    if (err.code === "ER_DUP_FIELDNAME" || err.message.includes("Duplicate column name")) {
+      console.log("✅ biometric_code already exists in teachers table");
+    } else {
+      console.warn("⚠️ Could not run ALTER TABLE on teachers for biometric_code:", err.message);
+    }
+  }
+
+  // Ensure batches table has late_grace_minutes and scheduled_days columns
+  try {
+    await conn.query(`
+      ALTER TABLE batches 
+      ADD COLUMN late_grace_minutes INT DEFAULT 10,
+      ADD COLUMN scheduled_days VARCHAR(100) DEFAULT 'Mon,Tue,Wed,Thu,Fri'
+    `);
+    console.log("✅ Ensured late_grace_minutes & scheduled_days exist in batches table");
+  } catch (err) {
+    if (err.code === "ER_DUP_FIELDNAME" || err.message.includes("Duplicate column name")) {
+      console.log("✅ late_grace_minutes or scheduled_days already exists in batches table");
+    } else {
+      console.warn("⚠️ Could not run ALTER TABLE on batches:", err.message);
+    }
+  }
+
+  // Create student_batches table
+  try {
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS student_batches (
+        student_id INT UNSIGNED NOT NULL,
+        batch_id INT UNSIGNED NOT NULL,
+        PRIMARY KEY (student_id, batch_id),
+        FOREIGN KEY (student_id) REFERENCES students(id) ON DELETE CASCADE,
+        FOREIGN KEY (batch_id) REFERENCES batches(batch_id) ON DELETE CASCADE
+      ) ENGINE=InnoDB;
+    `);
+    console.log("✅ student_batches table verified/created.");
+  } catch (err) {
+    console.warn("⚠️ Could not create student_batches table:", err.message);
+  }
+
+  // Create teacher_batch_mappings table
+  try {
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS teacher_batch_mappings (
+        teacher_id INT UNSIGNED NOT NULL,
+        batch_id INT UNSIGNED NOT NULL,
+        PRIMARY KEY (teacher_id, batch_id),
+        FOREIGN KEY (teacher_id) REFERENCES teachers(id) ON DELETE CASCADE,
+        FOREIGN KEY (batch_id) REFERENCES batches(batch_id) ON DELETE CASCADE
+      ) ENGINE=InnoDB;
+    `);
+    console.log("✅ teacher_batch_mappings table verified/created.");
+  } catch (err) {
+    console.warn("⚠️ Could not create teacher_batch_mappings table:", err.message);
+  }
+
+  // Create attendance table
+  try {
+    await conn.query(`
+      CREATE TABLE IF NOT EXISTS attendance (
+        id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+        user_id INT UNSIGNED NOT NULL,
+        role ENUM('STUDENT', 'TEACHER') NOT NULL,
+        date DATE NOT NULL,
+        punch_in_time TIME DEFAULT NULL,
+        punch_out_time TIME DEFAULT NULL,
+        status ENUM('Present', 'Absent', 'Late', 'Half-Day', 'On Leave') NOT NULL DEFAULT 'Absent',
+        source ENUM('Manual', 'Smart Office') NOT NULL DEFAULT 'Manual',
+        smart_office_reference_id VARCHAR(100) DEFAULT NULL,
+        batch_id INT UNSIGNED DEFAULT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_user_date_role_batch (user_id, date, role, batch_id),
+        FOREIGN KEY (batch_id) REFERENCES batches(batch_id) ON DELETE SET NULL
+      ) ENGINE=InnoDB;
+    `);
+    console.log("✅ attendance table verified/created.");
+  } catch (err) {
+    console.warn("⚠️ Could not create attendance table:", err.message);
   }
 }
 
