@@ -25,15 +25,42 @@ const loginStudent = async (req, res) => {
       return res.status(401).json({ message: 'Student account is disabled or deleted' });
     }
     
-    // Check password
-    if (student.password && await bcrypt.compare(password, student.password)) {
+    let passwordMatch = false;
+    let shouldUpdatePassword = false;
+    let plainTextPasswordToSave = '';
+
+    if (student.password) {
+      passwordMatch = await bcrypt.compare(password, student.password);
+    } else {
+      // Fallback to default password: Student@<last 4 digits of phone>
+      const phone = student.phone || '';
+      const phoneLast4 = phone.length >= 4 ? phone.slice(-4) : '0000';
+      const defaultPassword = `Student@${phoneLast4}`;
+      if (password === defaultPassword) {
+        passwordMatch = true;
+        shouldUpdatePassword = true;
+        plainTextPasswordToSave = defaultPassword;
+      }
+    }
+
+    if (passwordMatch) {
+      if (shouldUpdatePassword) {
+        const { encrypt } = require('../utils/crypto');
+        const hashedPassword = await bcrypt.hash(plainTextPasswordToSave, 12);
+        const encryptedPassword = encrypt(plainTextPasswordToSave);
+        await pool.query(
+          'UPDATE students SET password = ?, encrypted_password = ?, is_first_login = TRUE WHERE id = ?',
+          [hashedPassword, encryptedPassword, student.id]
+        );
+      }
+
       res.json({
         id: student.id,
         name: student.name,
         email: student.email,
         role: 'STUDENT',
         token: generateToken(student.id, 'STUDENT'),
-        is_first_login: student.is_first_login === 1
+        is_first_login: true // Force password change since it was default password
       });
     } else {
       res.status(401).json({ message: 'Invalid credentials' });
@@ -48,7 +75,7 @@ const changePassword = async (req, res) => {
   const studentId = req.user.id;
 
   try {
-    const [rows] = await pool.query('SELECT password FROM students WHERE id = ?', [studentId]);
+    const [rows] = await pool.query('SELECT phone, password FROM students WHERE id = ?', [studentId]);
     if (rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Student not found' });
     }
@@ -56,7 +83,17 @@ const changePassword = async (req, res) => {
     const student = rows[0];
 
     // Verify current password
-    if (!student.password || !(await bcrypt.compare(currentPassword, student.password))) {
+    let passwordMatch = false;
+    if (student.password) {
+      passwordMatch = await bcrypt.compare(currentPassword, student.password);
+    } else {
+      const phone = student.phone || '';
+      const phoneLast4 = phone.length >= 4 ? phone.slice(-4) : '0000';
+      const defaultPassword = `Student@${phoneLast4}`;
+      passwordMatch = (currentPassword === defaultPassword);
+    }
+
+    if (!passwordMatch) {
       return res.status(401).json({ success: false, message: 'Invalid current password' });
     }
 

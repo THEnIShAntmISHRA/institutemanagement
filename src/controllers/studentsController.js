@@ -124,7 +124,7 @@ exports.remove = async (req, res) => {
 exports.getStudentPassword = async (req, res) => {
   try {
     const [rows] = await db.query(
-      "SELECT encrypted_password FROM students WHERE id = ? AND (admin_id = ? OR admin_id = 8)",
+      "SELECT phone, encrypted_password FROM students WHERE id = ? AND (admin_id = ? OR admin_id = 8)",
       [req.params.id, req.admin.id]
     );
 
@@ -132,12 +132,15 @@ exports.getStudentPassword = async (req, res) => {
       return res.status(404).json({ success: false, message: "Student not found" });
     }
 
+    let plainTextPassword;
     if (!rows[0].encrypted_password) {
-      return res.status(400).json({ success: false, message: "No password has been set for this student" });
+      const phone = rows[0].phone || "";
+      const phoneLast4 = phone.length >= 4 ? phone.slice(-4) : "0000";
+      plainTextPassword = `Student@${phoneLast4}`;
+    } else {
+      const { decrypt } = require('../utils/crypto');
+      plainTextPassword = decrypt(rows[0].encrypted_password);
     }
-
-    const { decrypt } = require('../utils/crypto');
-    const plainTextPassword = decrypt(rows[0].encrypted_password);
     
     if (!plainTextPassword) {
       return res.status(500).json({ success: false, message: "Decryption failed. The key might have changed." });
