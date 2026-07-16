@@ -32,7 +32,7 @@ exports.getAll = async (req, res) => {
 exports.getOne = async (req, res) => {
   try {
     const [rows] = await db.query(
-      "SELECT * FROM teachers WHERE id = ? AND admin_id = ?",
+      "SELECT * FROM teachers WHERE id = ? AND (admin_id = ? OR admin_id IS NULL)",
       [req.params.id, req.admin.id]
     );
     if (!rows.length) return res.status(404).json({ success: false, message: "Teacher not found" });
@@ -63,7 +63,7 @@ exports.update = async (req, res) => {
   try {
     const { name, email, phone, institute, location, subjects } = req.body;
     const [result] = await db.query(
-      "UPDATE teachers SET name=?,email=?,phone=?,institute=?,location=?,subjects=? WHERE id=? AND admin_id=?",
+      "UPDATE teachers SET name=?,email=?,phone=?,institute=?,location=?,subjects=? WHERE id=? AND (admin_id=? OR admin_id IS NULL)",
       [name, email||null, phone||"", institute||"", location||"",
        subjects ? JSON.stringify(subjects) : null,
        req.params.id, req.admin.id]
@@ -78,7 +78,7 @@ exports.update = async (req, res) => {
 exports.remove = async (req, res) => {
   try {
     const [result] = await db.query(
-      "DELETE FROM teachers WHERE id = ? AND admin_id = ?",
+      "DELETE FROM teachers WHERE id = ? AND (admin_id = ? OR admin_id IS NULL)",
       [req.params.id, req.admin.id]
     );
     if (!result.affectedRows) return res.status(404).json({ success: false, message: "Teacher not found" });

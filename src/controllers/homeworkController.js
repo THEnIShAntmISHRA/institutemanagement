@@ -338,3 +338,43 @@ exports.getHomeworkStudents = async (req, res) => {
     res.status(500).json({ success: false, message: "An internal server error occurred." });
   }
 };
+
+// ── 8. GET ALL HOMEWORKS FOR ADMIN ─────────────────────
+exports.getAllHomeworkAdmin = async (req, res) => {
+  try {
+    const [homeworks] = await db.query(
+      `SELECT h.*, t.name as teacher_name,
+       (SELECT COUNT(DISTINCT student_id) FROM homework_status WHERE homework_id = h.id AND status = 'Completed') as completed_count,
+       (SELECT COUNT(DISTINCT student_id) FROM homework_status WHERE homework_id = h.id AND status = 'Late') as late_count
+       FROM homework h
+       JOIN teachers t ON h.teacher_id = t.id
+       WHERE h.is_deleted = FALSE
+       ORDER BY h.created_at DESC`
+    );
+
+    const result = [];
+    for (const h of homeworks) {
+      const stdMatch = h.batch.match(/\d+/);
+      const standard = stdMatch ? stdMatch[0] : h.batch;
+
+      // Find total active students in this standard
+      const [studentRows] = await db.query(
+        `SELECT COUNT(id) as total FROM students 
+         WHERE (standard = ? OR standard LIKE ? OR CONCAT(standard, ' Standard') LIKE ?) AND deleted_at IS NULL`,
+        [standard, `%${standard}%`, `%${standard}%`]
+      );
+      
+      result.push({
+        ...h,
+        completed_count: h.completed_count || 0,
+        late_count: h.late_count || 0,
+        total_students: studentRows[0]?.total || 0
+      });
+    }
+
+    res.json({ success: true, data: result });
+  } catch (err) {
+    console.error("Admin Homework Fetch Error:", err);
+    res.status(500).json({ success: false, message: "An internal server error occurred." });
+  }
+};
