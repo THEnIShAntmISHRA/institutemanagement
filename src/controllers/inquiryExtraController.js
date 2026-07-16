@@ -4,7 +4,7 @@ exports.getAll = async (_req, res) => {
   try {
     const [rows] = await db.query(
       `SELECT
-         id, name, phone, father_name, father_phone, course, location, board, standard,
+         id, name, phone, father_name, father_phone, course, location AS branch, board, standard,
          status, video, dob, email, address, college_name, college_timing, last_exam_marks,
          father_occupation, mother_occupation, future_plans, reference, sibling_name, sex,
          taking_coaching, hostel_required, admin_id, inquiry_date
@@ -35,6 +35,8 @@ exports.createInquiryExtra = async (req, res) => {
       address,
       standard,
       course,
+      board,
+      branch,
       last_exam_marks,
       college_name,
       college_timing,
@@ -60,10 +62,10 @@ exports.createInquiryExtra = async (req, res) => {
     const [result] = await db.query(
       `INSERT INTO inquiry_extra (
         name, phone, father_name, father_phone, dob, sex, email, address,
-        standard, course, last_exam_marks, college_name, college_timing,
+        standard, course, board, location, last_exam_marks, college_name, college_timing,
         future_plans, father_occupation, mother_occupation, sibling_name,
         reference, taking_coaching, hostel_required, inquiry_date
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         name,
         phone,
@@ -74,7 +76,9 @@ exports.createInquiryExtra = async (req, res) => {
         email,
         address,
         standard,
-        course,
+        course || "",
+        board || "",
+        branch || "",
         last_exam_marks,
         college_name,
         college_timing,
@@ -85,7 +89,7 @@ exports.createInquiryExtra = async (req, res) => {
         reference,
         taking_coaching,
         hostel_required,
-        inquiry_date,
+        inquiry_date || new Date(),
       ]
     );
 
@@ -139,7 +143,11 @@ exports.update = async (req, res) => {
     return res.status(400).json({ success: false, message: "Invalid ID" });
   }
   try {
-    const fields = req.body;
+    const fields = { ...req.body };
+    if (fields.branch !== undefined) {
+      fields.location = fields.branch;
+      delete fields.branch;
+    }
     const keys = Object.keys(fields);
     if (keys.length === 0) {
       return res.status(400).json({ success: false, message: "No fields to update" });

@@ -22,6 +22,21 @@ async function migrate() {
     `);
     console.log("homework table verified/created.");
 
+    // Ensure new fields exist on homework table
+    try {
+      const [cols] = await pool.query("SHOW COLUMNS FROM homework LIKE 'branch'");
+      if (cols.length === 0) {
+        await pool.query("ALTER TABLE homework ADD COLUMN branch VARCHAR(100) NULL AFTER batch");
+        await pool.query("ALTER TABLE homework ADD COLUMN board VARCHAR(100) NULL AFTER branch");
+        await pool.query("ALTER TABLE homework ADD COLUMN standard VARCHAR(100) NULL AFTER board");
+        await pool.query("ALTER TABLE homework ADD COLUMN chapter VARCHAR(255) NULL AFTER standard");
+        await pool.query("ALTER TABLE homework ADD COLUMN topic VARCHAR(255) NULL AFTER chapter");
+        console.log("Added branch, board, standard, chapter, topic columns to homework table.");
+      }
+    } catch (e) {
+      console.warn("Could not alter homework table:", e.message);
+    }
+
     // 2. Create homework_status table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS homework_status (

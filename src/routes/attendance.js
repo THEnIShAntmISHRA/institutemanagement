@@ -256,6 +256,24 @@ router.post("/notify-whatsapp", protect, authorize(["ADMIN", "TEACHER"]), async 
   }
 });
 
+// ── GET /api/attendance/my-attendance (Student's own attendance logs) ─────────
+router.get("/my-attendance", protect, authorize(["STUDENT"]), async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const [rows] = await db.query(
+      `SELECT date, punch_in_time, punch_out_time, status, source 
+       FROM attendance 
+       WHERE user_id = ? AND role = 'STUDENT' 
+       ORDER BY date DESC`,
+      [studentId]
+    );
+    return res.json({ success: true, data: rows });
+  } catch (err) {
+    console.error("[Attendance] Fetch My Attendance Error:", err.message);
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // v1 Compat routes (so any other smart office integration API route naming works)
 router.post("/v1/punch", protect, authorize(["ADMIN", "TEACHER"]), (req, res) => res.redirect(307, "/api/attendance/record"));
 router.get("/v1/logs", protect, authorize(["ADMIN", "TEACHER"]), (req, res) => res.redirect(307, "/api/attendance"));

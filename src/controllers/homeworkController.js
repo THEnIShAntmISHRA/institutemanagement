@@ -21,14 +21,66 @@ async function checkTeacherBatchAccess(teacherId, batchName) {
 // ── 1. CREATE HOMEWORK ─────────────────────────────────
 exports.createHomework = async (req, res) => {
   try {
-    const { title, description, subject, batches, dueDate, attachmentUrl } = req.body;
+    const { 
+      title, description, subject, batches, dueDate, attachmentUrl,
+      branch, board, standard, chapter, topic 
+    } = req.body;
     const { id: teacherId, role } = req.user;
 
+    const isTeacher = role === 'TEACHER';
+
+    // Support new flow: Chapter, Topic, Standard, Board, Branch selection
+    if (chapter && topic && standard) {
+      const calculatedBatch = board ? `${standard} ${board}` : standard;
+      
+      if (isTeacher) {
+        const access = await checkTeacherBatchAccess(teacherId, calculatedBatch);
+        if (!access.hasMappings) {
+          return res.status(403).json({
+            success: false,
+            message: "No batch mappings configured. Contact admin to assign your batches."
+          });
+        }
+        if (!access.allowed) {
+          return res.status(403).json({ 
+            success: false, 
+            message: `You are not authorized to assign homework to batch: ${calculatedBatch}` 
+          });
+        }
+      }
+
+      const calculatedTitle = title || `${chapter} (${topic})`;
+
+      const [result] = await db.query(
+        `INSERT INTO homework (title, description, subject, batch, teacher_id, due_date, attachment_url, branch, board, standard, chapter, topic)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          calculatedTitle, 
+          description || "", 
+          subject, 
+          calculatedBatch.trim(), 
+          teacherId, 
+          dueDate, 
+          attachmentUrl || null, 
+          branch || null, 
+          board || null, 
+          standard || null, 
+          chapter, 
+          topic
+        ]
+      );
+
+      return res.status(201).json({ 
+        success: true, 
+        message: "Homework assigned successfully", 
+        assignments: [{ batch: calculatedBatch, id: result.insertId }] 
+      });
+    }
+
+    // Fallback: Legacy batches array support
     if (!title || !description || !subject || !batches || !Array.isArray(batches) || batches.length === 0 || !dueDate) {
       return res.status(400).json({ success: false, message: "Missing required fields" });
     }
-
-    const isTeacher = role === 'TEACHER';
 
     // Enforce teacher batch scoping
     if (isTeacher) {
