@@ -4,6 +4,8 @@ const auth = require("../middleware/auth");
 const c = require("../controllers/inquiryExtraController");
 
 router.get("/", auth, c.getAll);
+router.post("/", c.createInquiryExtra);
+router.put("/:id", auth, c.update);
 router.delete("/:id", auth, c.remove);
 
 module.exports = router;
